@@ -431,6 +431,12 @@ export interface IChatSendRequestOptions {
 	 * The label of the confirmation action that was selected.
 	 */
 	confirmation?: string;
+
+	/**
+	 * TODO: @legomushroom
+	 * TODO: @legomushroom - make required and see if we need to explicitly (re)set it somewhere else
+	 */
+	hasPromptInstructionsAttachment?: boolean;
 }
 
 export const IChatService = createDecorator<IChatService>('IChatService');

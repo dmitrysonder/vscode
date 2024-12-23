@@ -21,6 +21,7 @@ import { localize, localize2 } from '../../../../../nls.js';
 import { Action2, IAction2Options, MenuId, registerAction2 } from '../../../../../platform/actions/common/actions.js';
 import { IClipboardService } from '../../../../../platform/clipboard/common/clipboardService.js';
 import { ICommandService } from '../../../../../platform/commands/common/commands.js';
+import { IConfigurationService } from '../../../../../platform/configuration/common/configuration.js';
 import { ContextKeyExpr, IContextKeyService } from '../../../../../platform/contextkey/common/contextkey.js';
 import { KeybindingWeight } from '../../../../../platform/keybinding/common/keybindingsRegistry.js';
 import { ILabelService } from '../../../../../platform/label/common/label.js';
@@ -48,6 +49,7 @@ import { IChatRequestVariableEntry } from '../../common/chatModel.js';
 import { ChatRequestAgentPart } from '../../common/chatParserTypes.js';
 import { IChatVariableData, IChatVariablesService } from '../../common/chatVariables.js';
 import { ILanguageModelToolsService } from '../../common/languageModelToolsService.js';
+import { PROMPT_INSTRUCTIONS_SETTING_NAME } from '../attachments/promptInstructionsAttachment.js';
 import { IChatWidget, IChatWidgetService, IQuickChatService, showChatView, showEditsView } from '../chat.js';
 import { imageToHash, isImage } from '../chatPasteProviders.js';
 import { isQuickChat } from '../chatWidget.js';
@@ -65,7 +67,7 @@ export function registerChatContextActions() {
 /**
  * We fill the quickpick with these types, and enable some quick access providers
  */
-type IAttachmentQuickPickItem = ICommandVariableQuickPickItem | IQuickAccessQuickPickItem | IToolQuickPickItem | IImageQuickPickItem | IVariableQuickPickItem | IOpenEditorsQuickPickItem | ISearchResultsQuickPickItem | IScreenShotQuickPickItem | IRelatedFilesQuickPickItem;
+type IAttachmentQuickPickItem = ICommandVariableQuickPickItem | IQuickAccessQuickPickItem | IToolQuickPickItem | IImageQuickPickItem | IVariableQuickPickItem | IOpenEditorsQuickPickItem | ISearchResultsQuickPickItem | IScreenShotQuickPickItem | IRelatedFilesQuickPickItem | IPromptInstructionsQuickPickItem;
 
 /**
  * These are the types that we can get out of the quick pick
@@ -117,6 +119,14 @@ function isRelatedFileQuickPickItem(obj: unknown): obj is IRelatedFilesQuickPick
 		typeof obj === 'object'
 		&& (obj as IRelatedFilesQuickPickItem).kind === 'related-files'
 	);
+}
+
+function isPromptInstructionsQuickPickItem(obj: unknown): obj is IRelatedFilesQuickPickItem {
+	if (!obj || typeof obj !== 'object') {
+		return false;
+	}
+
+	return ('kind' in obj && obj.kind === 'prompt-instructions');
 }
 
 interface IRelatedFilesQuickPickItem extends IQuickPickItem {
@@ -175,6 +185,11 @@ interface IScreenShotQuickPickItem extends IQuickPickItem {
 	kind: 'screenshot';
 	id: string;
 	icon?: ThemeIcon;
+}
+
+interface IPromptInstructionsQuickPickItem extends IQuickPickItem {
+	kind: 'prompt-instructions';
+	id: string;
 }
 
 abstract class AttachFileAction extends Action2 {
@@ -544,6 +559,27 @@ export class AttachContextAction extends Action2 {
 				if (blob) {
 					toAttach.push(convertBufferToScreenshotVariable(blob));
 				}
+			} else if (isPromptInstructionsQuickPickItem(pick)) {
+				const filesPromise = widget.attachmentModel.listPromptInstructionFiles()
+					.then((files) => {
+						return files.map((file) => {
+							const result: IQuickPickItem & { value: URI } = {
+								type: 'item',
+								label: labelService.getUriBasenameLabel(file),
+								description: labelService.getUriLabel(dirname(file), { relative: true }),
+								value: file,
+							};
+
+							return result;
+						});
+					});
+
+				const selectedFile = await quickInputService.pick(filesPromise, { placeHolder: localize('promptInstructions', 'Add prompt instructions file'), canPickMany: false });
+				if (!selectedFile) {
+					return;
+				}
+
+				widget.attachmentModel.addPromptInstructions(selectedFile.value);
 			} else {
 				// Anything else is an attachment
 				const attachmentPick = pick as IAttachmentQuickPickItem;
@@ -618,6 +654,7 @@ export class AttachContextAction extends Action2 {
 		const viewsService = accessor.get(IViewsService);
 		const hostService = accessor.get(IHostService);
 		const extensionService = accessor.get(IExtensionService);
+		const configService = accessor.get(IConfigurationService);
 
 		const context: { widget?: IChatWidget; showFilesOnly?: boolean; placeholder?: string } | undefined = args[0];
 		const widget = context?.widget ?? widgetService.lastFocusedWidget;
@@ -755,6 +792,17 @@ export class AttachContextAction extends Action2 {
 					iconClass: ThemeIcon.asClassName(Codicon.search),
 				});
 			}
+		}
+
+		const promptInstructionsSetting = configService.getValue(PROMPT_INSTRUCTIONS_SETTING_NAME);
+		// TODO: @legomushroom - properly check the setting value
+		if (promptInstructionsSetting === true || promptInstructionsSetting === 'true') {
+			quickPickItems.push({
+				kind: 'prompt-instructions',
+				id: 'prompt-instructions',
+				label: localize('chatContext.promptInstructions', 'Prompt Instructions'),
+				iconClass: ThemeIcon.asClassName(Codicon.lightbulbSparkle),
+			});
 		}
 
 		function extractTextFromIconLabel(label: string | undefined): string {

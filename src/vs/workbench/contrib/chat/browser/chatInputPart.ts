@@ -90,6 +90,7 @@ import { IChatHistoryEntry, IChatInputState, IChatWidgetHistoryService } from '.
 import { ILanguageModelChatMetadata, ILanguageModelsService } from '../common/languageModels.js';
 import { CancelAction, ChatModelPickerActionId, ChatSubmitAction, ChatSubmitSecondaryAgentAction, IChatExecuteActionContext } from './actions/chatExecuteActions.js';
 import { ImplicitContextAttachmentWidget } from './attachments/implicitContextAttachment.js';
+import { PromptInstructionsAttachmentsWidget } from './attachments/promptInstructionsAttachment.js';
 import { IChatWidget } from './chat.js';
 import { ChatAttachmentModel, EditsAttachmentModel } from './chatAttachmentModel.js';
 import { hookUpResourceAttachmentDragAndContextMenu, hookUpSymbolAttachmentDragAndContextMenu } from './chatContentParts/chatAttachmentsContentPart.js';
@@ -178,7 +179,24 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 			}
 		}
 
+		for (const uri of this.promptInstructionAttachmentsPart.references) {
+			contextArr.push({
+				id: 'vscode.prompt.instructions',
+				name: basename(uri.path),
+				value: uri,
+				isSelection: false,
+				enabled: true,
+				isFile: true,
+				isDynamic: true,
+			});
+		}
+
 		return contextArr;
+	}
+
+	public get hasPromptInstructionsAttachment(): boolean {
+		// TODO: @legomushroom - this should also check if the attachment is valid
+		return !this.promptInstructionAttachmentsPart.empty;
 	}
 
 	private _indexOfLastAttachedContextDeletedWithKeyboard: number = -1;
@@ -236,6 +254,7 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 	private inputEditorHasText: IContextKey<boolean>;
 	private chatCursorAtTop: IContextKey<boolean>;
 	private inputEditorHasFocus: IContextKey<boolean>;
+	private promptInstructionsAttached: IContextKey<boolean>;
 
 	private readonly _waitForPersistedLanguageModel = this._register(new MutableDisposable<IDisposable>());
 	private _onDidChangeCurrentLanguageModel = this._register(new Emitter<string>());
@@ -282,6 +301,11 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 	}
 
 	private readonly getInputState: () => IChatInputState;
+
+	/**
+	 * TODO: @legomushroom
+	 */
+	private promptInstructionAttachmentsPart: PromptInstructionsAttachmentsWidget;
 
 	constructor(
 		// private readonly editorOptions: ChatEditorOptions, // TODO this should be used
@@ -332,6 +356,7 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 		this.inputEditorHasText = ChatContextKeys.inputHasText.bindTo(contextKeyService);
 		this.chatCursorAtTop = ChatContextKeys.inputCursorAtTop.bindTo(contextKeyService);
 		this.inputEditorHasFocus = ChatContextKeys.inputHasFocus.bindTo(contextKeyService);
+		this.promptInstructionsAttached = ChatContextKeys.promptInstructionsAttached.bindTo(contextKeyService);
 
 		this.history = this.loadHistory();
 		this._register(this.historyService.onDidClearHistory(() => this.history = new HistoryNavigator2([{ text: '' }], 50, historyKeyFn)));
@@ -345,6 +370,14 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 		this._chatEditsListPool = this._register(this.instantiationService.createInstance(CollapsibleListPool, this._onDidChangeVisibility.event, MenuId.ChatEditingWidgetModifiedFilesToolbar));
 
 		this._hasFileAttachmentContextKey = ChatContextKeys.hasFileAttachments.bindTo(contextKeyService);
+
+		this.promptInstructionAttachmentsPart = this._register(
+			instantiationService.createInstance(
+				PromptInstructionsAttachmentsWidget,
+				this.attachmentModel.promptInstructions,
+				this._contextResourceLabels,
+			),
+		);
 
 		this.initSelectedModel();
 	}
@@ -815,7 +848,9 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 			// Render as attachments anything that isn't a file, but still render specific ranges in a file
 			? [...this.attachmentModel.attachments.entries()].filter(([_, attachment]) => !attachment.isFile || attachment.isFile && typeof attachment.value === 'object' && !!attachment.value && 'range' in attachment.value)
 			: [...this.attachmentModel.attachments.entries()];
-		dom.setVisibility(Boolean(attachments.length) || Boolean(this.implicitContext?.value), this.attachedContextContainer);
+
+
+		dom.setVisibility(Boolean(attachments.length) || Boolean(this.implicitContext?.value) || !this.promptInstructionAttachmentsPart.empty, this.attachedContextContainer);
 		if (!attachments.length) {
 			this._indexOfLastAttachedContextDeletedWithKeyboard = -1;
 		}
@@ -824,6 +859,9 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 			const implicitPart = store.add(this.instantiationService.createInstance(ImplicitContextAttachmentWidget, this.implicitContext, this._contextResourceLabels));
 			container.appendChild(implicitPart.domNode);
 		}
+
+		this.promptInstructionsAttached.set(!this.promptInstructionAttachmentsPart.empty);
+		container.appendChild(this.promptInstructionAttachmentsPart.domNode);
 
 		const attachmentInitPromises: Promise<void>[] = [];
 		for (const [index, attachment] of attachments) {

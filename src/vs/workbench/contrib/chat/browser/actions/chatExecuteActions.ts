@@ -46,13 +46,19 @@ export class ChatSubmitAction extends SubmitAction {
 	static readonly ID = 'workbench.action.chat.submit';
 
 	constructor() {
+		const precondition = ContextKeyExpr.and(
+			ContextKeyExpr.or(ChatContextKeys.inputHasText, ChatContextKeys.promptInstructionsAttached),
+			ChatContextKeys.requestInProgress.negate(),
+			ChatContextKeys.location.notEqualsTo(ChatAgentLocation.EditingSession),
+		);
+
 		super({
 			id: ChatSubmitAction.ID,
 			title: localize2('interactive.submit.label', "Send and Dispatch"),
 			f1: false,
 			category: CHAT_CATEGORY,
 			icon: Codicon.send,
-			precondition: ContextKeyExpr.and(ChatContextKeys.inputHasText, ChatContextKeys.requestInProgress.negate(), ChatContextKeys.location.notEqualsTo(ChatAgentLocation.EditingSession)),
+			precondition,
 			keybinding: {
 				when: ChatContextKeys.inChatInput,
 				primary: KeyCode.Enter,

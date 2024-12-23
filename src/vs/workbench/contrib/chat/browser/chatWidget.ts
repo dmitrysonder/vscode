@@ -650,7 +650,8 @@ export class ChatWidget extends Disposable implements IChatWidget {
 					noCommandDetection: true,
 					attempt: request.attempt + 1,
 					location: this.location,
-					userSelectedModelId: this.input.currentLanguageModel
+					userSelectedModelId: this.input.currentLanguageModel,
+					hasPromptInstructionsAttachment: this.input.hasPromptInstructionsAttachment,
 				};
 				this.chatService.resendRequest(request, options).catch(e => this.logService.error('FAILED to rerun request', e));
 			}
@@ -1080,6 +1081,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 				attachedContext,
 				workingSet,
 				noCommandDetection: options?.noCommandDetection,
+				hasPromptInstructionsAttachment: this.inputPart.hasPromptInstructionsAttachment,
 			});
 
 			if (result) {

@@ -516,6 +516,45 @@ class BuiltinDynamicCompletions extends Disposable {
 			}
 		}));
 
+
+		// Instructions reference completions
+		this._register(this.languageFeaturesService.completionProvider.register({ scheme: ChatInputPart.INPUT_SCHEME, hasAccessToAllModels: true }, {
+			_debugDisplayName: 'chatDynamicInstructionsReferenceCompletions',
+			triggerCharacters: [chatVariableLeader],
+			provideCompletionItems: async (model: ITextModel, position: Position, _context: CompletionContext, token: CancellationToken) => {
+				const widget = this.chatWidgetService.getWidgetByInputUri(model.uri);
+				if (!widget || !widget.supportsFileReferences) {
+					return null;
+				}
+
+				const result: CompletionList = { suggestions: [] };
+				const range = computeCompletionRanges(model, position, BuiltinDynamicCompletions.VariableNameDef, true);
+
+				if (range) {
+					const variableName = 'instructions';
+
+					const afterRange = new Range(position.lineNumber, range.replace.startColumn, position.lineNumber, range.replace.startColumn + `#${variableName}:`.length);
+					result.suggestions.push({
+						label: `${chatVariableLeader}${variableName}`,
+						insertText: `${chatVariableLeader}${variableName}:`,
+						documentation: localize('pickInstructionsFileLabel', "Pick an instructions file"),
+						range,
+						kind: CompletionItemKind.Text,
+						command: { id: SelectAndInsertFileAction.ID, title: SelectAndInsertFileAction.ID, arguments: [{ widget, range: afterRange }] },
+						sortText: 'z'
+					});
+				}
+
+				// const range2 = computeCompletionRanges(model, position, new RegExp(`${chatVariableLeader}[^\\s]*`, 'g'), true);
+				// if (range2) {
+				// 	await this.addFileEntries(widget, result, range2, token);
+				// }
+
+				return result;
+			}
+		}));
+
+
 		this._register(CommandsRegistry.registerCommand(BuiltinDynamicCompletions.addReferenceCommand, (_services, arg) => this.cmdAddReference(arg)));
 
 		this.queryBuilder = this.instantiationService.createInstance(QueryBuilder);

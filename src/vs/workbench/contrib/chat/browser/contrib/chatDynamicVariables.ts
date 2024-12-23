@@ -300,6 +300,97 @@ export class SelectAndInsertFileAction extends Action2 {
 }
 registerAction2(SelectAndInsertFileAction);
 
+export class SelectAndAttachInstructionsAction extends Action2 {
+	static readonly Name = 'instructions';
+	static readonly Item = {
+		label: localize('allInstructions', 'All Instructions'),
+		description: localize('allInstructionsDescription', 'Search for relevant instructions in the workspace and provide context from them'),
+	};
+	static readonly ID = 'workbench.action.chat.selectAndAttachInstructions';
+
+	constructor() {
+		super({
+			id: SelectAndAttachInstructionsAction.ID,
+			title: '' // not displayed
+		});
+	}
+
+	async run(accessor: ServicesAccessor, ...args: any[]) {
+		const textModelService = accessor.get(ITextModelService);
+		const logService = accessor.get(ILogService);
+		const quickInputService = accessor.get(IQuickInputService);
+		const chatVariablesService = accessor.get(IChatVariablesService);
+
+		const context = args[0];
+		if (!isSelectAndInsertActionContext(context)) {
+			return;
+		}
+
+		// const doCleanup = () => {
+		// 	// Failed, remove the dangling `file`
+		// 	context.widget.inputEditor.executeEdits('chatInsertFile', [{ range: context.range, text: `` }]);
+		// };
+
+		let options: IQuickAccessOptions | undefined;
+		// If we have a `files` variable, add an option to select all files in the picker.
+		// This of course assumes that the `files` variable has the behavior that it searches
+		// through files in the workspace.
+		if (chatVariablesService.hasVariable(SelectAndAttachInstructionsAction.Name)) {
+			const providerOptions: AnythingQuickAccessProviderRunOptions = {
+				additionPicks: [SelectAndAttachInstructionsAction.Item, { type: 'separator' }]
+			};
+			options = { providerOptions };
+		}
+		// TODO: have dedicated UX for this instead of using the quick access picker
+		const picks = await quickInputService.quickAccess.pick('', options);
+		if (!picks?.length) {
+			logService.trace('SelectAndInsertInstructionAction: no file selected');
+			// doCleanup();
+			return;
+		}
+
+		const editor = context.widget.inputEditor;
+		const range = context.range;
+
+		// Handle the special case of selecting all files
+		if (picks[0] === SelectAndAttachInstructionsAction.Item) {
+			const text = `#${SelectAndAttachInstructionsAction.Name}`;
+			const success = editor.executeEdits('chatInsertFile', [{ range, text: text + ' ' }]);
+			if (!success) {
+				logService.trace(`SelectAndInsertInstructionAction: failed to insert "${text}"`);
+				// doCleanup();
+			}
+			return;
+		}
+
+		// Handle the case of selecting a specific file
+		const resource = (picks[0] as unknown as { resource: unknown }).resource as URI;
+		if (!textModelService.canHandleResource(resource)) {
+			logService.trace('SelectAndInsertInstructionAction: non-text resource selected');
+			// doCleanup();
+			return;
+		}
+
+		// 	const fileName = basename(resource);
+		// 	const text = `#file:${fileName}`;
+		// 	const success = editor.executeEdits('chatInsertFile', [{ range, text: text + ' ' }]);
+		// 	if (!success) {
+		// 		logService.trace(`SelectAndInsertInstructionAction: failed to insert "${text}"`);
+		// 		doCleanup();
+		// 		return;
+		// 	}
+
+		// 	context.widget.getContrib<ChatDynamicVariableModel>(ChatDynamicVariableModel.ID)?.addReference({
+		// 		id: 'vscode.instructions',
+		// 		isFile: true,
+		// 		prefix: 'instructions',
+		// 		range: { startLineNumber: range.startLineNumber, startColumn: range.startColumn, endLineNumber: range.endLineNumber, endColumn: range.startColumn + text.length },
+		// 		data: resource
+		// 	});
+	}
+}
+registerAction2(SelectAndAttachInstructionsAction);
+
 export class SelectAndInsertSymAction extends Action2 {
 	static readonly Name = 'symbols';
 	static readonly ID = 'workbench.action.chat.selectAndInsertSym';
